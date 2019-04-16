@@ -1,0 +1,8 @@
+[package]
+name = "reinforcement_learning"
+version = "0.1.0"
+authors = ["Matteo De Carlo <matteo.dek@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+rand = "0.6.5"
