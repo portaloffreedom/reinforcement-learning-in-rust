@@ -186,20 +186,21 @@ fn main() {
     let stdin = io::stdin();
     for line in stdin.lock().lines() {
         let line = line.unwrap();
-        println!("read {}", line);
         let movement = match line.as_str() {
-            "w" => Movement::Up,
-            "s" => Movement::Down,
-            "a" => Movement::Left,
-            "d" => Movement::Right,
-            _ => panic!("wrong input"),
+            "w" => Some(Movement::Up),
+            "s" => Some(Movement::Down),
+            "a" => Some(Movement::Left),
+            "d" => Some(Movement::Right),
+            _ => None,
         };
-        s = agent.r#move(movement);
-        print!("{:?} => {:?} {:?} \n", movement, s, agent.pos);
+        if let Some(movement) = movement {
+            s = agent.r#move(movement);
+            print!("{:?} => {:?} {:?} \n", movement, s, agent.pos);
 
-        if let Some(result) = s {
-            println!("Finished with resulut {}", result);
-            break
+            if let Some(result) = s {
+                println!("Finished with result {}", result);
+                break
+            }
         }
     }
 }
