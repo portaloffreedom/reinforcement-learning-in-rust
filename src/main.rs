@@ -9,7 +9,7 @@ use rand::{
 };
 
 #[derive(Debug)]
-enum Cell {
+pub enum Cell {
     Ice(i32),
     Final(i32),
 }
@@ -26,7 +26,7 @@ impl Cell {
 
 // Action
 #[derive(Debug, Copy, Clone)]
-enum Movement {
+pub enum Movement {
     Up,
     Right,
     Down,
@@ -56,7 +56,7 @@ impl Distribution<Movement> for Standard {
     }
 }
 
-struct Env {
+pub struct Env {
     map: Vec<Vec<Cell>>,
     start: (usize, usize),
 }
@@ -142,25 +142,23 @@ impl Env {
     }
 }
 
-struct Agent<'env> {
-    env: &'env Env,
+struct Agent{
     pos: (usize, usize),
     reward: (i32),
 }
 
-impl<'env> Agent<'env> {
-    pub fn new(env: &'env Env) -> Self
+impl Agent {
+    pub fn new(env: &Env) -> Self
     {
         Self {
-            env,
             pos: env.start_pos(),
             reward: 0,
         }
     }
 
-    pub fn r#move(&mut self, movement: Movement) -> Option<i32>
+    pub fn r#move(&mut self, env: &Env, movement: Movement) -> Option<i32>
     {
-        let (new_pos, cell) = self.env.transition(self.pos, movement);
+        let (new_pos, cell) = env.transition(self.pos, movement);
         self.reward += cell.reward();
         self.pos = new_pos;
 
@@ -171,36 +169,86 @@ impl<'env> Agent<'env> {
     }
 }
 
+pub trait Policy
+{
+    fn new(env: Env) -> Box<Self>;
+    fn solve(mut self) -> i32;
+}
+
+struct RandomPolicy
+{
+    env: Env,
+    agent: Agent,
+}
+
+impl Policy for RandomPolicy
+{
+    fn new(env: Env) -> Box<Self>
+    {
+        let agent = Agent::new(&env);
+        Box::new(Self { env, agent })
+    }
+
+    fn solve(mut self) -> i32 {
+        let mut s: Option<i32> = None;
+        while s.is_none() {
+            let movement = rand::random();
+            s = self.agent.r#move(&self.env, movement);
+            print!("{:?} => {:?} {:?} \n", movement, s, self.agent.pos)
+        }
+        s.unwrap()
+    }
+}
+
+struct HumanControlPolicy
+{
+    env: Env,
+    agent: Agent,
+}
+
+impl Policy for HumanControlPolicy
+{
+    fn new(env: Env) -> Box<Self>
+    {
+        let agent = Agent::new(&env);
+        Box::new(Self { env, agent })
+    }
+
+    fn solve(mut self) -> i32 {
+        let mut s: Option<i32> = None;
+
+        let stdin = io::stdin();
+        for line in stdin.lock().lines() {
+            let line = line.unwrap();
+            let movement = match line.as_str() {
+                "w" => Some(Movement::Up),
+                "s" => Some(Movement::Down),
+                "a" => Some(Movement::Left),
+                "d" => Some(Movement::Right),
+                _ => None,
+            };
+            if let Some(movement) = movement {
+                s = self.agent.r#move(&self.env, movement);
+                print!("{:?} => {:?} {:?} \n", movement, s, self.agent.pos);
+
+                if let Some(result) = s {
+                    return result;
+                }
+            }
+        }
+
+        panic!("Input finished before the agent could enter a final state");
+    }
+}
+
 fn main() {
     println!("Hello, world!");
 
     let env = Env::new();
     let mut agent = Agent::new(&env);
-    let mut s: Option<i32> = None;
-//    while s.is_none() {
-//        let movement = rand::random();
-//        s = agent.r#move(movement);
-//        print!("{:?} => {:?} {:?} \n", movement, s, agent.pos)
-//    }
+//    let policy = RandomPolicy::new(env);
+    let policy = HumanControlPolicy::new(env);
+    let result = policy.solve();
 
-    let stdin = io::stdin();
-    for line in stdin.lock().lines() {
-        let line = line.unwrap();
-        let movement = match line.as_str() {
-            "w" => Some(Movement::Up),
-            "s" => Some(Movement::Down),
-            "a" => Some(Movement::Left),
-            "d" => Some(Movement::Right),
-            _ => None,
-        };
-        if let Some(movement) = movement {
-            s = agent.r#move(movement);
-            print!("{:?} => {:?} {:?} \n", movement, s, agent.pos);
-
-            if let Some(result) = s {
-                println!("Finished with result {}", result);
-                break
-            }
-        }
-    }
+    println!("Finished with result {}", result);
 }
