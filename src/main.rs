@@ -71,7 +71,7 @@ impl Env {
                 vec![Cell::Ice(0), Cell::Ice(0),     Cell::Ice(20),    Cell::Final(-10)],
                 vec![Cell::Ice(0), Cell::Final(-10), Cell::Final(-10), Cell::Final(-10)],
             ],
-            start: (3, 0)
+            start: (3, 0),
         }
     }
 
@@ -84,9 +84,9 @@ impl Env {
 
     fn check_movement(&self, pos: (usize, usize), movement_vec: (isize, isize)) -> ((usize, usize), bool)
     {
-        use std::cmp::{min,max};
+        use std::cmp::{min, max};
         let boundaries = self.size();
-        let boundaries =  (boundaries.0 as isize, boundaries.1 as isize);
+        let boundaries = (boundaries.0 as isize, boundaries.1 as isize);
         let mut new_pos_y = pos.0 as isize + movement_vec.0;
         let mut new_pos_x = pos.1 as isize + movement_vec.1;
         let mut wall_hit = false;
@@ -95,14 +95,14 @@ impl Env {
             new_pos_x = 0;
             wall_hit = true;
         } else if new_pos_x >= boundaries.0 {
-            new_pos_x = boundaries.0 -1;
+            new_pos_x = boundaries.0 - 1;
             wall_hit = true;
         }
         if new_pos_y < 0 {
             new_pos_y = 0;
             wall_hit = true;
         } else if new_pos_y >= boundaries.1 {
-            new_pos_y = boundaries.1 -1;
+            new_pos_y = boundaries.1 - 1;
             wall_hit = true;
         }
 
@@ -134,7 +134,7 @@ impl Env {
                     target_cell = &self.map[new_pos.0][new_pos.1];
                 }
             }
-            _ => {},
+            _ => {}
         }
 
 
@@ -142,7 +142,7 @@ impl Env {
     }
 }
 
-struct Agent{
+struct Agent {
     pos: (usize, usize),
     reward: (i32),
 }
@@ -169,20 +169,17 @@ impl Agent {
     }
 }
 
-pub trait Policy
-{
+pub trait Policy {
     fn new(env: Env) -> Box<Self>;
     fn solve(mut self) -> i32;
 }
 
-struct RandomPolicy
-{
+struct RandomPolicy {
     env: Env,
     agent: Agent,
 }
 
-impl Policy for RandomPolicy
-{
+impl Policy for RandomPolicy {
     fn new(env: Env) -> Box<Self>
     {
         let agent = Agent::new(&env);
@@ -200,14 +197,12 @@ impl Policy for RandomPolicy
     }
 }
 
-struct HumanControlPolicy
-{
+struct HumanControlPolicy {
     env: Env,
     agent: Agent,
 }
 
-impl Policy for HumanControlPolicy
-{
+impl Policy for HumanControlPolicy {
     fn new(env: Env) -> Box<Self>
     {
         let agent = Agent::new(&env);
