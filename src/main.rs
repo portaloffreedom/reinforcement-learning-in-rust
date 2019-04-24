@@ -8,6 +8,10 @@ use rand::{
     Rng,
 };
 
+use ndarray::Array2;
+//use itertools::Itertools;
+use std::collections::HashMap;
+
 #[derive(Debug)]
 pub enum Cell {
     Ice(i32),
@@ -25,13 +29,20 @@ impl Cell {
 }
 
 // Action
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub enum Movement {
     Up,
     Right,
     Down,
     Left,
 }
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+pub struct Pos {
+    x: usize,
+    y: usize,
+}
+
 
 impl Movement {
     pub fn into_vector(self) -> (isize, isize)
@@ -58,37 +69,87 @@ impl Distribution<Movement> for Standard {
 
 pub struct Env {
     map: Vec<Vec<Cell>>,
-    start: (usize, usize),
+    start: Pos,
+    transition: HashMap<(Pos, Movement), Vec<(Pos, f32)>>,
 }
 
 impl Env {
     pub fn new() -> Self
     {
-        Self {
+        let mut env = Self {
             map: vec![
                 vec![Cell::Ice(0), Cell::Ice(0),     Cell::Ice(0),     Cell::Final(100)],
                 vec![Cell::Ice(0), Cell::Final(-10), Cell::Ice(0),     Cell::Final(-10)],
                 vec![Cell::Ice(0), Cell::Ice(0),     Cell::Ice(20),    Cell::Final(-10)],
                 vec![Cell::Ice(0), Cell::Final(-10), Cell::Final(-10), Cell::Final(-10)],
             ],
-            start: (3, 0)
+            start: Pos{x:3, y:0},
+            transition: HashMap::new(),
+        };
+        (& mut env).setup_transition_map();
+        env
+    }
+
+    fn setup_transition_map(& mut self) {
+        self.transition = HashMap::new();
+        let actions = [Movement::Up, Movement::Down, Movement::Right, Movement::Left];
+        for pos in self.iter() {
+            for movement in actions.iter() {
+                let mut options: Vec<(Pos, f32)> = Vec::new();
+
+                let movement_vec = movement.into_vector();
+                let boundaries = self.size();
+                let (new_pos, wall_hit) = self.check_movement(pos, movement_vec);
+
+                let cell = &self.map[new_pos.x][new_pos.y];
+                match cell {
+                    Cell::Ice(_) => {
+                        let mut wall_hit = false;
+                        let mut other_pos = new_pos;
+                        while !wall_hit {
+                            let (_new_pos, _wall_hit) = self.check_movement(other_pos, movement_vec);
+                            other_pos = _new_pos;
+                            wall_hit = _wall_hit;
+                            if let Cell::Ice(reward) = *(&self.map[other_pos.x][other_pos.y]) { }
+                            else {
+                                wall_hit = true;
+                            }
+                        }
+                        if other_pos.x != new_pos.x || other_pos.y != new_pos.y {
+                            options.push((new_pos, 0.95));
+                            options.push((other_pos, 0.05))
+                        } else {
+                            options.push((new_pos, 1.0));
+                        }
+                    }
+                    _ => {
+                        options.push((new_pos, 1.0));
+                    },
+                }
+                self.transition.insert((pos, movement.clone()), options);
+            }
         }
+        println!("Map setup");
     }
 
-    pub fn size(&self) -> (usize, usize)
+    fn reward(&self, pos: &Pos) -> i32 {
+        self.map[pos.x][pos.y].reward()
+    }
+
+    pub fn size(&self) -> Pos
     {
-        (self.map.len(), self.map[0].len())
+        Pos{x:self.map.len(), y:self.map[0].len()}
     }
 
-    pub fn start_pos(&self) -> (usize, usize) { self.start }
+    pub fn start_pos(&self) -> Pos { self.start }
 
-    fn check_movement(&self, pos: (usize, usize), movement_vec: (isize, isize)) -> ((usize, usize), bool)
+    fn check_movement(&self, pos: Pos, movement_vec: (isize, isize)) -> (Pos, bool)
     {
         use std::cmp::{min,max};
         let boundaries = self.size();
-        let boundaries =  (boundaries.0 as isize, boundaries.1 as isize);
-        let mut new_pos_y = pos.0 as isize + movement_vec.0;
-        let mut new_pos_x = pos.1 as isize + movement_vec.1;
+        let boundaries =  (boundaries.x as isize, boundaries.y as isize);
+        let mut new_pos_x = pos.x as isize + movement_vec.0;
+        let mut new_pos_y = pos.y as isize + movement_vec.1;
         let mut wall_hit = false;
 
         if new_pos_x < 0 {
@@ -109,41 +170,92 @@ impl Env {
 //        new_pos_y = max(0, min(boundaries.0 as isize -1, new_pos_y));
 //        new_pos_x = max(0, min(boundaries.1 as isize -1, new_pos_x));
 
-        ((new_pos_y as usize, new_pos_x as usize), wall_hit)
+        (Pos{x: new_pos_x as usize, y: new_pos_y as usize}, wall_hit)
     }
 
-    pub fn transition(&self, pos: (usize, usize), movement: Movement) -> ((usize, usize), &Cell)
+    pub fn iter(&self) -> EnvIter {
+        EnvIter::new(self.size())
+    }
+
+    pub fn transition(&self, pos: Pos, movement: Movement) -> (Pos, &Cell)
     {
-        let mut movement_vec = movement.into_vector();
-        let boundaries = self.size();
-        let (mut new_pos, wall_hit) = self.check_movement(pos, movement_vec);
-        let mut target_cell = &self.map[new_pos.0][new_pos.1];
-
-        match target_cell {
-            Cell::Ice(_) => {
-                let r: f32 = rand::random();
-                if r > 0.95 {
-                    print!("I'm sliding! ");
-
-                    let mut wall_hit = false;
-                    while !wall_hit {
-                        let (_new_pos, _wall_hit) = self.check_movement(new_pos, movement_vec);
-                        new_pos = _new_pos;
-                        wall_hit = _wall_hit;
-                    }
-                    target_cell = &self.map[new_pos.0][new_pos.1];
-                }
+        let options = &self.transition[&(pos, movement)];
+        let r: f32 = rand::random();
+        let mut tot_p = 0.0;
+        for (new_pos, p) in options {
+            tot_p += p;
+            if tot_p > r {
+                let target_cell = &self.map[new_pos.x][new_pos.y];
+                return (*new_pos, target_cell);
             }
-            _ => {},
         }
+        panic!("Illegal state: Invalid transition map for {:?} {:?}", pos, movement);
 
+    }
 
-        (new_pos, target_cell)
+    pub fn evaluate_policy(&self, policy: &impl Policy, discount: f32) -> f32 {
+
+        let mut V = Array2::<f32>::zeros((self.size().x, self.size().y));
+        let actions = [Movement::Up, Movement::Down, Movement::Right, Movement::Left];
+        for i in 0..10 {
+            println!("Iteration {}", i);
+            for pos in self.iter() {
+                V[[pos.x, pos.y]] = actions.iter().map(|a| -> f32 {
+                    let p_policy = (&policy).prob(&self, pos, a);
+
+                    let sum_of_poss: f32 =  self.transition[&(pos, *a)].iter().map(|pos2| -> f32{
+                            let (new_pos, p) = pos2;
+                            let reward = self.reward(new_pos) as f32;
+                        p*(reward - discount * V[[new_pos.x, new_pos.y]])
+                        }).sum();
+                    p_policy * sum_of_poss
+                }).sum();
+                println!("Value ({}, {}): {}", pos.x, pos.y, V[[pos.x, pos.y]]);
+
+            }
+        }
+        V[[3, 0]]
     }
 }
 
-struct Agent{
-    pos: (usize, usize),
+pub struct EnvIter {
+    currx: usize,
+    curry: usize,
+    first: bool,
+    size: Pos,
+}
+impl EnvIter{
+    fn new(size: Pos) -> EnvIter{
+        EnvIter{
+            size,
+            currx:0,
+            curry:0,
+            first:true,
+        }
+    }
+}
+impl Iterator for EnvIter {
+    type Item = Pos;
+
+    fn next(&mut self) -> Option<Pos> {
+        if self.first {
+            self.first = false;
+            return Some(Pos{x:0, y:0});
+        }
+        self.curry += 1;
+        if self.curry == self.size.y {
+            self.curry = 0;
+            self.currx += 1;
+            if self.currx == self.size.x {
+                return None;
+            }
+        }
+        Some(Pos{x:self.currx, y: self.curry})
+    }
+}
+
+pub struct Agent{
+    pos: Pos,
     reward: (i32),
 }
 
@@ -171,50 +283,49 @@ impl Agent {
 
 pub trait Policy
 {
-    fn new(env: Env) -> Box<Self>;
-    fn solve(mut self) -> i32;
+    fn new() -> Box<Self>;
+    fn solve(&self, env: &Env, agent:&mut Agent) -> i32;
+    fn prob(&self, env:&Env, pos: Pos, movement: &Movement) -> f32;
+//    fn evaluate(&self, env: &Env, discount: f32) -> f32
 }
 
-struct RandomPolicy
-{
-    env: Env,
-    agent: Agent,
+struct RandomPolicy {
 }
 
 impl Policy for RandomPolicy
 {
-    fn new(env: Env) -> Box<Self>
+    fn new() -> Box<Self>
     {
-        let agent = Agent::new(&env);
-        Box::new(Self { env, agent })
+//        let agent = Agent::new(&env);
+        Box::new(Self { })
     }
 
-    fn solve(mut self) -> i32 {
+    fn solve(&self, env: &Env, agent:&mut Agent) -> i32 {
         let mut s: Option<i32> = None;
         while s.is_none() {
             let movement = rand::random();
-            s = self.agent.r#move(&self.env, movement);
-            print!("{:?} => {:?} {:?} \n", movement, s, self.agent.pos)
+            s = agent.r#move(env, movement);
+            print!("{:?} => {:?} {:?} \n", movement, s, agent.pos)
         }
         s.unwrap()
     }
+
+    fn prob(&self, env: &Env, pos: Pos, movement: &Movement) -> f32 {
+        0.25
+    }
 }
 
-struct HumanControlPolicy
-{
-    env: Env,
-    agent: Agent,
+struct HumanControlPolicy {
 }
 
 impl Policy for HumanControlPolicy
 {
-    fn new(env: Env) -> Box<Self>
+    fn new() -> Box<Self>
     {
-        let agent = Agent::new(&env);
-        Box::new(Self { env, agent })
+        Box::new(Self {  })
     }
 
-    fn solve(mut self) -> i32 {
+    fn solve(&self, env: &Env, agent:&mut Agent) -> i32 {
         let mut s: Option<i32> = None;
 
         let stdin = io::stdin();
@@ -228,8 +339,8 @@ impl Policy for HumanControlPolicy
                 _ => None,
             };
             if let Some(movement) = movement {
-                s = self.agent.r#move(&self.env, movement);
-                print!("{:?} => {:?} {:?} \n", movement, s, self.agent.pos);
+                s = agent.r#move(env, movement);
+                print!("{:?} => {:?} {:?} \n", movement, s, agent.pos);
 
                 if let Some(result) = s {
                     return result;
@@ -239,16 +350,22 @@ impl Policy for HumanControlPolicy
 
         panic!("Input finished before the agent could enter a final state");
     }
+
+    fn prob(&self, env: &Env, pos: Pos, movement: &Movement) -> f32 {
+        unimplemented!()
+    }
 }
+
 
 fn main() {
     println!("Hello, world!");
 
     let env = Env::new();
     let mut agent = Agent::new(&env);
-//    let policy = RandomPolicy::new(env);
-    let policy = HumanControlPolicy::new(env);
-    let result = policy.solve();
+    let policy = RandomPolicy::new();
+//    let policy = HumanControlPolicy::new();
+    println!("Evaluation of policy: {}", (&env).evaluate_policy(&*policy, 0.9));
+    let result = policy.solve(&env, & mut agent);
 
     println!("Finished with result {}", result);
 }
