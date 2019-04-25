@@ -7,6 +7,7 @@ use rand::{
     distributions::{Distribution, Standard},
     Rng,
 };
+use ordered_float::NotNaN;
 
 use ndarray::Array2;
 //use itertools::Itertools;
@@ -72,6 +73,9 @@ pub struct Env {
     start: Pos,
     transition: HashMap<(Pos, Movement), Vec<(Pos, f32)>>,
 }
+
+use std::cmp::Ordering;
+
 
 impl Env {
     pub fn new() -> Self
@@ -193,24 +197,40 @@ impl Env {
 
     }
 
-    pub fn evaluate_policy(&self, policy: &impl Policy, discount: f32) -> f32 {
+    // Evaluate policy, or do value iteration by passing policy = None.
+    pub fn evaluate_policy(&self, policy: Option<&impl Policy>, discount: f32) -> f32 {
 
         let mut V = Array2::<f32>::zeros((self.size().x, self.size().y));
         let actions = [Movement::Up, Movement::Down, Movement::Right, Movement::Left];
-        for i in 0..10 {
+        for i in 0..100 {
             println!("Iteration {}", i);
             for pos in self.iter() {
-                V[[pos.x, pos.y]] = actions.iter().map(|a| -> f32 {
-                    let p_policy = (&policy).prob(&self, pos, a);
+                // Only update non-final states
+                if let Cell::Ice(r) = self.map[pos.x][pos.y] {
+                    let action_values = actions.iter().map(|a| -> f32 {
+                        let p_policy = match policy {
+                            Some(p) => (&p).prob(&self, pos, a),
+                            None => 1.0
+                        };
 
-                    let sum_of_poss: f32 =  self.transition[&(pos, *a)].iter().map(|pos2| -> f32{
+                        let sum_of_poss: f32 = self.transition[&(pos, *a)].iter().map(|pos2| -> f32{
                             let (new_pos, p) = pos2;
                             let reward = self.reward(new_pos) as f32;
-                        p*(reward - discount * V[[new_pos.x, new_pos.y]])
+                            // \sum_{s'} T(s, a, s') * [R(s, a, s') + \gamma V(s')]
+                            p * (reward + discount * V[[new_pos.x, new_pos.y]])
                         }).sum();
-                    p_policy * sum_of_poss
-                }).sum();
-                println!("Value ({}, {}): {}", pos.x, pos.y, V[[pos.x, pos.y]]);
+                        // \pi(s, a) * \sum_{s'} T(s, a, s') * [R(s, a, s') + \gamma V(s')]
+                        p_policy * sum_of_poss
+                    });
+                    V[[pos.x, pos.y]] = match policy {
+                        Some(_) => action_values.sum(),
+                        None => action_values.map(|f| NotNaN::new(f).unwrap())
+                            .max().unwrap().into_inner(),
+                        // The fact that it is so difficult to write .max() on Floats in Rust is def
+                        // a con for using this language in practice, tbh.
+                    };
+                    println!("Value ({}, {}): {}", pos.x, pos.y, V[[pos.x, pos.y]]);
+                }
 
             }
         }
@@ -364,7 +384,7 @@ fn main() {
     let mut agent = Agent::new(&env);
     let policy = RandomPolicy::new();
 //    let policy = HumanControlPolicy::new();
-    println!("Evaluation of policy: {}", (&env).evaluate_policy(&*policy, 0.9));
+    println!("Evaluation of policy: {}", (&env).evaluate_policy(Some(&*policy), 0.9));
     let result = policy.solve(&env, & mut agent);
 
     println!("Finished with result {}", result);
