@@ -197,44 +197,85 @@ impl Env {
 
     }
 
-    // Evaluate policy, or do value iteration by passing policy = None.
-    pub fn evaluate_policy(&self, policy: Option<&impl Policy>, discount: f32) -> f32 {
-
+    pub fn policy_iteration(&self, discount: f32, max_delta: f32) -> f32 {
         let mut V = Array2::<f32>::zeros((self.size().x, self.size().y));
-        let actions = [Movement::Up, Movement::Down, Movement::Right, Movement::Left];
-        for i in 0..100 {
-            println!("Iteration {}", i);
+        let mut policy = *DetPolicy::new();
+        policy.initialize(&self);
+        for i in 1..20 {
+            println!("Policy iteration loop {}", i);
+            self.value_iterate_pol(Some(&policy), & mut V, discount, max_delta);
+            for pos in self.iter() {
+                let (_, _, best_action) = self.inner(&pos, Some(&policy), &V, discount);
+                policy.policy.insert(pos, best_action);
+            }
+            println!("{:?}", policy.policy);
+        }
+        V[[self.start.x, self.start.y]]
+    }
+
+    fn value_iterate_pol<P: Policy>(&self, policy: Option<&P>, V: &mut Array2<f32>, discount: f32, max_delta: f32) {
+        let mut delta = 1.0;
+        let mut count_i = 1;
+        while delta > max_delta {
+            println!("Iteration {}", count_i);
+            delta = 0.0;
             for pos in self.iter() {
                 // Only update non-final states
                 if let Cell::Ice(r) = self.map[pos.x][pos.y] {
-                    let action_values = actions.iter().map(|a| -> f32 {
-                        let p_policy = match policy {
-                            Some(p) => (&p).prob(&self, pos, a),
-                            None => 1.0
-                        };
-
-                        let sum_of_poss: f32 = self.transition[&(pos, *a)].iter().map(|pos2| -> f32{
-                            let (new_pos, p) = pos2;
-                            let reward = self.reward(new_pos) as f32;
-                            // \sum_{s'} T(s, a, s') * [R(s, a, s') + \gamma V(s')]
-                            p * (reward + discount * V[[new_pos.x, new_pos.y]])
-                        }).sum();
-                        // \pi(s, a) * \sum_{s'} T(s, a, s') * [R(s, a, s') + \gamma V(s')]
-                        p_policy * sum_of_poss
-                    });
-                    V[[pos.x, pos.y]] = match policy {
-                        Some(_) => action_values.sum(),
-                        None => action_values.map(|f| NotNaN::new(f).unwrap())
-                            .max().unwrap().into_inner(),
-                        // The fact that it is so difficult to write .max() on Floats in Rust is def
-                        // a con for using this language in practice, tbh.
+                    let (value, max_Q, _) = self.inner(&pos, policy, V, discount);
+                    let new_value = match policy {
+                        Some(_) => value,
+                        None => max_Q,
                     };
-                    println!("Value ({}, {}): {}", pos.x, pos.y, V[[pos.x, pos.y]]);
+                    delta = delta.max(new_value - V[[pos.x, pos.y]]);
+                    V[[pos.x, pos.y]] = new_value;
+                    println!("Value ({}, {}): {}", pos.x, pos.y, new_value);
                 }
-
             }
+            count_i += 1;
         }
-        V[[3, 0]]
+    }
+
+    fn inner<P: Policy>(&self, pos: &Pos, policy: Option<&P>, V: &Array2<f32>, discount: f32) -> (f32, f32, Movement) {
+        let actions = [Movement::Up, Movement::Down, Movement::Right, Movement::Left];
+        let mut best_action = Movement::Up;
+        let mut best_value = -std::f32::INFINITY;
+        let action_values = actions.iter().map(|a| -> f32 {
+            let p_policy = match policy {
+                Some(p) => (&p).prob(&self, *pos, a),
+                None => 0.25
+            };
+
+            let sum_of_poss: f32 = self.transition[&(*pos, *a)].iter().map(|pos2| -> f32{
+                let (new_pos, p) = pos2;
+                let reward = self.reward(new_pos) as f32;
+                // \sum_{s'} T(s, a, s') * [R(s, a, s') + \gamma V(s')]
+                p * (reward + discount * V[[new_pos.x, new_pos.y]])
+            }).sum();
+
+            if sum_of_poss > best_value {
+                best_value = sum_of_poss;
+                best_action = *a;
+            }
+            // \pi(s, a) * \sum_{s'} T(s, a, s') * [R(s, a, s') + \gamma V(s')]
+            p_policy * sum_of_poss
+        });
+        (action_values.sum(), best_value, best_action)
+    }
+
+    // Evaluate policy, or do value iteration by passing policy = None.
+    pub fn evaluate_policy<P: Policy>(&self, policy: &P, discount: f32, max_delta: f32) -> f32 {
+        let mut V = Array2::<f32>::zeros((self.size().x, self.size().y));
+        self.value_iterate_pol(Some(policy), & mut V, discount, max_delta);
+
+        V[[self.start.x, self.start.y]]
+    }
+
+    pub fn value_iteration(&self, discount: f32, max_delta: f32) -> Array2<f32> {
+        let mut V = Array2::<f32>::zeros((self.size().x, self.size().y));
+        self.value_iterate_pol(None::<&RandomPolicy>, & mut V, discount, max_delta);
+
+        V
     }
 }
 
@@ -306,7 +347,6 @@ pub trait Policy
     fn new() -> Box<Self>;
     fn solve(&self, env: &Env, agent:&mut Agent) -> i32;
     fn prob(&self, env:&Env, pos: Pos, movement: &Movement) -> f32;
-//    fn evaluate(&self, env: &Env, discount: f32) -> f32
 }
 
 struct RandomPolicy {
@@ -376,6 +416,89 @@ impl Policy for HumanControlPolicy
     }
 }
 
+struct TablePolicy {
+    policy: HashMap<(Pos, Movement), f32>,
+}
+
+impl TablePolicy{
+
+    // Initializes the table to assign uniform probability to all actions
+    fn initialize(& mut self, env: &Env) {
+        let actions = [Movement::Up, Movement::Down, Movement::Right, Movement::Left];
+        for pos in env.iter() {
+            for a in actions.iter() {
+                self.policy.insert((pos, *a), 0.25);
+            }
+        }
+    }
+}
+
+impl Policy for TablePolicy{
+    fn new() -> Box<Self> {
+        Box::new(Self {
+            policy: HashMap::new(),
+        })
+    }
+
+    fn solve(&self, env: &Env, agent: &mut Agent) -> i32 {
+        let mut s: Option<i32> = None;
+        let actions = [Movement::Up, Movement::Down, Movement::Right, Movement::Left];
+        while s.is_none() {
+            let r: f32 = rand::random();
+            let mut tot_p = 0.0;
+            for a in actions.iter() {
+                tot_p += self.policy[&(agent.pos, *a)];
+                if tot_p > r {
+                    s = agent.r#move(env, *a);
+                    print!("{:?} => {:?} {:?} \n", a, s, agent.pos);
+                    continue;
+                }
+            }
+        }
+        s.unwrap()
+    }
+
+    fn prob(&self, env: &Env, pos: Pos, movement: &Movement) -> f32 {
+        self.policy[&(pos, *movement)]
+    }
+}
+
+// Represents deterministic policy
+struct DetPolicy {
+    policy: HashMap<Pos, Movement>,
+}
+
+impl DetPolicy{
+
+    // Initializes the deterministic policy to always go up
+    fn initialize(& mut self, env: &Env) {
+        for pos in env.iter() {
+            self.policy.insert(pos, Movement::Up);
+        }
+    }
+}
+
+impl Policy for DetPolicy{
+    fn new() -> Box<Self> {
+        Box::new(Self {
+            policy: HashMap::new(),
+        })
+    }
+
+    fn solve(&self, env: &Env, agent: &mut Agent) -> i32 {
+        let mut s: Option<i32> = None;
+        while s.is_none() {
+            let a = self.policy[&agent.pos];
+            s = agent.r#move(env, a);
+            print!("{:?} => {:?} {:?} \n", a, s, agent.pos)
+        }
+        s.unwrap()
+    }
+
+    fn prob(&self, env: &Env, pos: Pos, movement: &Movement) -> f32 {
+        if self.policy[&pos] == *movement {1.0} else {0.0}
+    }
+}
 
 fn main() {
     println!("Hello, world!");
@@ -384,7 +507,9 @@ fn main() {
     let mut agent = Agent::new(&env);
     let policy = RandomPolicy::new();
 //    let policy = HumanControlPolicy::new();
-    println!("Evaluation of policy: {}", (&env).evaluate_policy(Some(&*policy), 0.9));
+    println!("Evaluation of policy: {}", (&env).evaluate_policy(&*policy, 0.9, 0.001));
+    println!("Value iteration: {}", (&env).value_iteration(0.9, 0.001));
+    println!("Policy iteration: {}", (&env).policy_iteration(0.9, 0.001));
     let result = policy.solve(&env, & mut agent);
 
     println!("Finished with result {}", result);
