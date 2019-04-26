@@ -92,7 +92,7 @@ impl Env {
     fn setup_transition_map(& mut self) {
         self.transition = HashMap::new();
         let actions = [Movement::Up, Movement::Down, Movement::Right, Movement::Left];
-        for pos in self.iter() {
+        for pos in self.iter_all_coordinates() {
             for movement in actions.iter() {
                 let mut options: Vec<(Pos, f32)> = Vec::new();
 
@@ -172,7 +172,7 @@ impl Env {
         (Pos{x: new_pos_x as usize, y: new_pos_y as usize}, wall_hit)
     }
 
-    pub fn iter(&self) -> EnvIter {
+    pub fn iter_all_coordinates(&self) -> EnvIter {
         EnvIter::new(self.size())
     }
 
@@ -192,70 +192,86 @@ impl Env {
 
     }
 
-    pub fn policy_iteration(&self, discount: f32, max_delta: f32) -> f32 {
+    pub fn policy_iteration(&self, discount: f32, max_delta: f32) -> (Box<DetPolicy>, f32) {
         let mut V = Array2::<f32>::zeros((self.size().x, self.size().y));
-        let mut policy = *DetPolicy::new();
+        let mut policy = DetPolicy::new();
         policy.initialize(&self);
         for i in 1..20 {
             println!("Policy iteration loop {}", i);
-            self.value_iterate_pol(Some(&policy), & mut V, discount, max_delta);
-            for pos in self.iter() {
-                let (_, _, best_action) = self.inner(&pos, Some(&policy), &V, discount);
+            self.value_iterate_pol(Some(&*policy), & mut V, discount, max_delta);
+            for pos in self.iter_all_coordinates() {
+                let (_, _, best_action) = self.inner(&pos, Some(&*policy), &V, discount);
                 policy.policy.insert(pos, best_action);
             }
             println!("{:?}", policy.policy);
         }
-        V[[self.start.x, self.start.y]]
+        (policy, V[[self.start.x, self.start.y]])
     }
 
     fn value_iterate_pol<P: Policy>(&self, policy: Option<&P>, V: &mut Array2<f32>, discount: f32, max_delta: f32) {
-        let mut delta = 1.0;
+        let mut delta = max_delta + 1.0;
         let mut count_i = 1;
-        while delta > max_delta {
+        while delta > max_delta { //if the max of all changes is very small, stop
             println!("Iteration {}", count_i);
             delta = 0.0;
-            for pos in self.iter() {
+            for pos in self.iter_all_coordinates() {
                 // Only update non-final states
-                if let Cell::Ice(r) = self.map[pos.x][pos.y] {
-                    let (value, max_Q, _) = self.inner(&pos, policy, V, discount);
-                    let new_value = match policy {
-                        Some(_) => value,
-                        None => max_Q,
-                    };
-                    delta = delta.max(new_value - V[[pos.x, pos.y]]);
-                    V[[pos.x, pos.y]] = new_value;
-                    println!("Value ({}, {}): {}", pos.x, pos.y, new_value);
+                match self.map[pos.x][pos.y] {
+                    Cell::Final(_) => {}, //final states have always zero value
+                    Cell::Ice(r) => {
+                        let (expected_value, best_value, _best_action) = self.inner(&pos, policy, V, discount);
+                        let new_value = if policy.is_some() {
+                            expected_value
+                        } else {
+                            best_value
+                        };
+                        delta = delta.max((new_value - V[[pos.x, pos.y]]).abs());
+                        V[[pos.x, pos.y]] = new_value;
+                        println!("Value ({}, {}): {}", pos.x, pos.y, new_value);
+                    }
                 }
             }
             count_i += 1;
         }
     }
 
+    /**
+    * Function that computes 3 different values.
+    * Returns the expected value for all actions and the action that will return the best value.
+    */
     fn inner<P: Policy>(&self, pos: &Pos, policy: Option<&P>, V: &Array2<f32>, discount: f32) -> (f32, f32, Movement) {
-        let actions = [Movement::Up, Movement::Down, Movement::Right, Movement::Left];
+        let actions = vec![Movement::Up, Movement::Down, Movement::Right, Movement::Left];
         let mut best_action = Movement::Up;
         let mut best_value = -std::f32::INFINITY;
-        let action_values = actions.iter().map(|a| -> f32 {
-            let p_policy = match policy {
-                Some(p) => (&p).prob(&self, *pos, a),
-                None => 0.25
-            };
+        let expected_value = actions.into_iter()
+            .map(|a| -> f32 {
+                let p_policy = match policy {
+                    Some(p) => p.prob(&self, *pos, &a),
+                    None => 0.25, // 1.0 / actions.len();
+                };
 
-            let sum_of_poss: f32 = self.transition[&(*pos, *a)].iter().map(|pos2| -> f32{
-                let (new_pos, p) = pos2;
-                let reward = self.reward(new_pos) as f32;
-                // \sum_{s'} T(s, a, s') * [R(s, a, s') + \gamma V(s')]
-                p * (reward + discount * V[[new_pos.x, new_pos.y]])
-            }).sum();
+                // Expected value of state s, given action `a`
+                let sum_of_poss: f32 = self.transition[&(*pos, a)].iter()
+                    .map(|(new_pos, p)| -> f32 {
+                        let reward_new_pos = self.reward(new_pos) as f32;
+                        let value_new_pos = V[[new_pos.x, new_pos.y]];
+                        // \sum_{s'} T(s, a, s') * [R(s, a, s') + \gamma V(s')]
+                        p * (reward_new_pos + discount * value_new_pos)
+                    })
+                    .sum();
 
-            if sum_of_poss > best_value {
-                best_value = sum_of_poss;
-                best_action = *a;
-            }
-            // \pi(s, a) * \sum_{s'} T(s, a, s') * [R(s, a, s') + \gamma V(s')]
-            p_policy * sum_of_poss
-        });
-        (action_values.sum(), best_value, best_action)
+                // SELECT OF BEST ACTION
+                if sum_of_poss > best_value {
+                    best_value = sum_of_poss;
+                    best_action = a;
+                }
+
+                // EXPECTED REWARD FOR ALL ACTIONS
+                // \pi(s, a) * \sum_{s'} T(s, a, s') * [R(s, a, s') + \gamma V(s')]
+                p_policy * sum_of_poss
+            })
+            .sum();
+        (expected_value, best_value, best_action)
     }
 
     // Evaluate policy, or do value iteration by passing policy = None.

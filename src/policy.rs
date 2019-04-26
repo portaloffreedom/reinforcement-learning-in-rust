@@ -19,8 +19,7 @@ pub trait Policy
     fn prob(&self, env:&Env, pos: Pos, movement: &Movement) -> f32;
 }
 
-pub struct RandomPolicy {
-}
+pub struct RandomPolicy {}
 
 impl Policy for RandomPolicy
 {
@@ -95,7 +94,7 @@ impl TablePolicy{
     // Initializes the table to assign uniform probability to all actions
     fn initialize(& mut self, env: &Env) {
         let actions = [Movement::Up, Movement::Down, Movement::Right, Movement::Left];
-        for pos in env.iter() {
+        for pos in env.iter_all_coordinates() {
             for a in actions.iter() {
                 self.policy.insert((pos, *a), 0.25);
             }
@@ -142,7 +141,7 @@ impl DetPolicy{
 
     // Initializes the deterministic policy to always go up
     pub fn initialize(& mut self, env: &Env) {
-        for pos in env.iter() {
+        for pos in env.iter_all_coordinates() {
             self.policy.insert(pos, Movement::Up);
         }
     }
