@@ -10,6 +10,13 @@ use crate::policy::{
     RandomPolicy,
 };
 
+use lp_modeler::variables::{LpContinuous, lp_sum, LpExpression};
+use lp_modeler::problem::{LpObjective, Problem, LpProblem, LpFileFormat};
+use lp_modeler::variables::LpExpression::*;
+use lp_modeler::operations::{LpOperations};
+use lp_modeler::solvers::{SolverTrait, CbcSolver};
+
+
 #[derive(Debug)]
 pub enum Cell {
     Ice(i32),
@@ -287,6 +294,71 @@ impl Env {
         self.value_iterate_pol(None::<&RandomPolicy>, & mut V, discount, max_delta);
 
         V
+    }
+
+    pub fn linear_programming(&self, discount: f32) -> f32 {
+        let mut vars = HashMap::new();
+        for pos in self.iter_all_coordinates() {
+            let name = format!("<{},{}>", pos.x, pos.y);
+            match self.map[pos.x][pos.y] {
+                Cell::Final(_) => {
+//                    vars.insert(name, LpExpression::new(0.0));
+                }, //final states have always zero value
+                Cell::Ice(_) => {
+                    let v= LpContinuous::new(&name);
+                    vars.insert(name, v);
+                }
+            }
+        }
+//        let variables: Vec<LpContinuous> = self.iter_all_coordinates()
+//            .map(|pos| LpContinuous::new(&format!("{},{}", pos.x, pos.y))).collect();
+
+        let mut problem = LpProblem::new("MDPs", LpObjective::Minimize);
+        problem += lp_sum(&vars.values().collect());
+
+        for pos in self.iter_all_coordinates() {
+            match self.map[pos.x][pos.y] {
+                Cell::Final(_) => {}, //final states have always zero value
+                Cell::Ice(_) => {
+                    let name = format!("<{},{}>", pos.x, pos.y);
+                    for a in vec![Movement::Up, Movement::Down, Movement::Right, Movement::Left] {
+                        // Expected value of state s, given action `a`
+                        let sum_of_poss: Vec<LpExpression> = self.transition[&(pos, a)]
+                            .iter()
+                            .map(|t| -> LpExpression {
+                                let (new_pos, p) = *t;
+                                let reward_new_pos = self.reward(&new_pos) as f32;
+                                let value_new_pos = match self.map[new_pos.x][new_pos.y] {
+                                    Cell::Final(_) => LpExpression::LitVal(0.0),
+                                    Cell::Ice(_) => 1.0 * &vars[&format!("<{},{}>", new_pos.x, new_pos.y)],
+                                };
+                                // \sum_{s'} T(s, a, s') * [R(s, a, s') + \gamma V(s')]
+                                p * (reward_new_pos + discount * value_new_pos)
+                            }).collect();
+
+                        problem += lp_sum(&sum_of_poss).le(&vars[&name]);
+                    }
+                }
+            }
+        }
+        problem.write_lp("problem.lp");
+
+        // Specify solver
+        let solver = CbcSolver::new();
+
+    // Run optimisation and process output hashmap
+        match solver.run(&problem) {
+            Ok((status, var_values)) => {
+                println!("Status {:?}", status);
+                for (name, value) in var_values.iter() {
+                    println!("value of {} = {}", name, value);
+                }
+            },
+            Err(msg) => println!("{}", msg),
+        }
+
+
+        0.05
     }
 }
 
