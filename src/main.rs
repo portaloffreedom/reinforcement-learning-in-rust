@@ -5,6 +5,7 @@ use std::vec::Vec;
 pub mod policy;
 pub mod environment;
 pub mod agent;
+pub mod rl;
 
 use policy::Policy;
 
