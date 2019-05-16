@@ -8,7 +8,7 @@ use crate::environment::{
 
 pub struct Agent{
     pub pos: Pos,
-    pub reward: (i32),
+    pub cum_reward: (i32),
 }
 
 impl Agent {
@@ -16,19 +16,15 @@ impl Agent {
     {
         Self {
             pos: env.start_pos(),
-            reward: 0,
+            cum_reward: 0,
         }
     }
 
-    pub fn r#move(&mut self, env: &Env, movement: Movement) -> Option<i32>
-    {
+    pub fn r#move(&mut self, env: &Env, movement: Movement) -> i32 {
         let (new_pos, cell) = env.transition(self.pos, movement);
-        self.reward += cell.reward();
+        self.cum_reward += cell.reward();
         self.pos = new_pos;
 
-        match cell {
-            Cell::Final(_) => Some(self.reward),
-            _ => None,
-        }
+       cell.reward()
     }
 }

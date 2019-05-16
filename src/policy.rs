@@ -30,13 +30,13 @@ impl Policy for RandomPolicy
     }
 
     fn solve(&self, env: &Env, agent:&mut Agent) -> i32 {
-        let mut s: Option<i32> = None;
-        while s.is_none() {
+        let mut s: i32= 0;
+        while !env.is_terminal(agent.pos) {
             let movement = rand::random();
             s = agent.r#move(env, movement);
             print!("{:?} => {:?} {:?} \n", movement, s, agent.pos)
         }
-        s.unwrap()
+        agent.cum_reward
     }
 
     fn prob(&self, env: &Env, pos: Pos, movement: &Movement) -> f32 {
@@ -55,8 +55,6 @@ impl Policy for HumanControlPolicy
     }
 
     fn solve(&self, env: &Env, agent:&mut Agent) -> i32 {
-        let mut s: Option<i32> = None;
-
         let stdin = io::stdin();
         for line in stdin.lock().lines() {
             let line = line.unwrap();
@@ -68,11 +66,11 @@ impl Policy for HumanControlPolicy
                 _ => None,
             };
             if let Some(movement) = movement {
-                s = agent.r#move(env, movement);
+                let s = agent.r#move(env, movement);
                 print!("{:?} => {:?} {:?} \n", movement, s, agent.pos);
 
-                if let Some(result) = s {
-                    return result;
+                if env.is_terminal(agent.pos) {
+                    return agent.cum_reward;
                 }
             }
         }
@@ -110,21 +108,20 @@ impl Policy for TablePolicy{
     }
 
     fn solve(&self, env: &Env, agent: &mut Agent) -> i32 {
-        let mut s: Option<i32> = None;
         let actions = [Movement::Up, Movement::Down, Movement::Right, Movement::Left];
-        while s.is_none() {
+        while !env.is_terminal(agent.pos) {
             let r: f32 = rand::random();
             let mut tot_p = 0.0;
             for a in actions.iter() {
                 tot_p += self.policy[&(agent.pos, *a)];
                 if tot_p > r {
-                    s = agent.r#move(env, *a);
+                    let s = agent.r#move(env, *a);
                     print!("{:?} => {:?} {:?} \n", a, s, agent.pos);
                     continue;
                 }
             }
         }
-        s.unwrap()
+        agent.cum_reward
     }
 
     fn prob(&self, env: &Env, pos: Pos, movement: &Movement) -> f32 {
@@ -155,13 +152,12 @@ impl Policy for DetPolicy{
     }
 
     fn solve(&self, env: &Env, agent: &mut Agent) -> i32 {
-        let mut s: Option<i32> = None;
-        while s.is_none() {
+        while !env.is_terminal(agent.pos) {
             let a = self.policy[&agent.pos];
-            s = agent.r#move(env, a);
+            let s = agent.r#move(env, a);
             print!("{:?} => {:?} {:?} \n", a, s, agent.pos)
         }
-        s.unwrap()
+        agent.cum_reward
     }
 
     fn prob(&self, env: &Env, pos: Pos, movement: &Movement) -> f32 {

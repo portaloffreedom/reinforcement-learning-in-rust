@@ -42,6 +42,7 @@ pub enum Movement {
     Left,
 }
 
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Pos {
     x: usize,
@@ -58,6 +59,10 @@ impl Movement {
             Movement::Left  => ( 0,-1),
             Movement::Right => ( 0, 1),
         }
+    }
+
+    pub fn actions() -> Vec<Movement> {
+        vec![Movement::Up, Movement::Down, Movement::Right, Movement::Left]
     }
 }
 
@@ -142,9 +147,15 @@ impl Env {
         self.map[pos.x][pos.y].reward()
     }
 
-    pub fn size(&self) -> Pos
-    {
+    pub fn size(&self) -> Pos {
         Pos{x:self.map.len(), y:self.map[0].len()}
+    }
+
+    pub fn is_terminal(&self, pos: Pos) -> bool {
+        if let Cell::Final(_) = self.map[pos.x][pos.y] {
+            return true;
+        }
+        false
     }
 
     pub fn start_pos(&self) -> Pos { self.start }
