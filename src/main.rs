@@ -28,5 +28,5 @@ fn main() {
 
 //    env.linear_programming(0.9);
 
-    rl::model_free_learning(&env, &mut QLearningActionSelector::new(EpsilonGreedy::new(0.05)), 0.01, 0.9, 0.01);
+    rl::model_free_learning(&env, &mut QLearningActionSelector::new(EpsilonGreedy::new(0.05)), 0.01, 0.99, 0.0001);
 }

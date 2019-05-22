@@ -34,6 +34,38 @@ impl ExplorationStrategy for EpsilonGreedy {
     }
 }
 
+struct SoftMaxExploration {
+    temperature: f32,
+    rng: ThreadRng,
+}
+
+impl SoftMaxExploration {
+    pub fn new(temperature: f32) -> Self {
+        SoftMaxExploration {
+            temperature,
+            rng: thread_rng()
+        }
+    }
+}
+
+impl ExplorationStrategy for SoftMaxExploration {
+    fn next_state(&mut self, state: Pos, state_value: &HashMap<(Pos, Movement), f32>) -> Movement {
+        let actions = Movement::actions();
+        let logits: Vec<f32> = actions.iter().map(
+            |a| (state_value[&(state, *a)] / self.temperature).exp()).collect();
+        let z: f32 = logits.iter().sum();
+        let probs: Vec<f32> = logits.into_iter().map(|l| l/z).collect();
+        let p: f32 = self.rng.gen();
+        let mut p_sum = 0.0;
+        let mut i = 0;
+        while p > p_sum {
+            i += 1;
+            p_sum += probs[i-1];
+        }
+        actions[i-1]
+    }
+}
+
 fn max_value_next_action(state: Pos, state_value: &HashMap<(Pos, Movement), f32>) -> Movement {
     Movement::actions().into_iter().fold(Movement::Up,|a, f| -> Movement {
         if state_value[&(state, f)] > state_value[&(state, a)] { f }
