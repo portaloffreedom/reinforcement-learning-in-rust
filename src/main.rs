@@ -36,33 +36,34 @@ fn main() {
     let amt_episodes = 200000;
     let temperature = 20.0;
     let step_size = 0.01;
+    let use_memory = Some((20, 5));
 
-//    let policy = rl::model_free_learning(&env, &mut QLearningActionSelector::new(EpsilonGreedy::new(epsilon)), step_size, discount, amt_episodes);
-//    let policy = rl::model_free_learning(&env, &mut QLearningActionSelector::new(SoftMaxExploration::new(temperature)), step_size, discount, amt_episodes);
-//    let policy = rl::model_free_learning(&env, &mut SARSAActionSelector::new(EpsilonGreedy::new(epsilon)), step_size, discount, amt_episodes);
-//    let policy = rl::model_free_learning(&env, &mut SARSAActionSelector::new(SoftMaxExploration::new(temperature)), step_size, discount, amt_episodes);
-//    let policy = rl::double_q_learning(&env, &mut QLearningActionSelector::new(EpsilonGreedy::new(epsilon)), step_size, discount, amt_episodes);
+//    let policy = rl::model_free_learning(&env, &mut QLearningActionSelector::new(EpsilonGreedy::new(epsilon)), step_size, discount, amt_episodes, use_memory).0;
+    let policy = rl::model_free_learning(&env, &mut QLearningActionSelector::new(SoftMaxExploration::new(temperature)), step_size, discount, amt_episodes, use_memory).0;
+//    let policy = rl::model_free_learning(&env, &mut SARSAActionSelector::new(EpsilonGreedy::new(epsilon)), step_size, discount, amt_episodes, use_memory).0;
+//    let policy = rl::model_free_learning(&env, &mut SARSAActionSelector::new(SoftMaxExploration::new(temperature)), step_size, discount, amt_episodes, use_memory ).0;
+//    let policy = rl::double_q_learning(&env, &mut QLearningActionSelector::new(EpsilonGreedy::new(epsilon)), step_size, discount, amt_episodes).0;
 //    policy.solve(&env, &mut agent);
-//    policy.print(&env);
+    policy.print(&env);
 
 //    write_statistics("q_learning_epsilon", &mut|| {
-//        rl::model_free_learning(&env, &mut QLearningActionSelector::new(EpsilonGreedy::new(epsilon)), step_size, discount, amt_episodes)
+//        rl::model_free_learning(&env, &mut QLearningActionSelector::new(EpsilonGreedy::new(epsilon)), step_size, discount, amt_episodes, use_memory)
 //    });
-    write_statistics("q_learning_softmax", &mut|| {
-        rl::model_free_learning(&env, &mut QLearningActionSelector::new(SoftMaxExploration::new(temperature)), step_size, discount, amt_episodes)
-    });
-    write_statistics("SARSA_epsilon", &mut|| {
-        rl::model_free_learning(&env, &mut SARSAActionSelector::new(EpsilonGreedy::new(epsilon)), step_size, discount, amt_episodes)
-    });
-    write_statistics("SARSA_softmax", &mut|| {
-        rl::model_free_learning(&env, &mut SARSAActionSelector::new(SoftMaxExploration::new(temperature)), step_size, discount, amt_episodes)
-    });
-    write_statistics("double_q_epsilon", &mut|| {
-        rl::double_q_learning(&env, &mut QLearningActionSelector::new(EpsilonGreedy::new(epsilon)), step_size, discount, amt_episodes)
-    });
-    write_statistics("double_q_softmax", &mut|| {
-        rl::double_q_learning(&env, &mut QLearningActionSelector::new(SoftMaxExploration::new(temperature)), step_size, discount, amt_episodes)
-    });
+//    write_statistics("q_learning_softmax", &mut|| {
+//        rl::model_free_learning(&env, &mut QLearningActionSelector::new(SoftMaxExploration::new(temperature)), step_size, discount, amt_episodes, use_memory)
+//    });
+//    write_statistics("SARSA_epsilon", &mut|| {
+//        rl::model_free_learning(&env, &mut SARSAActionSelector::new(EpsilonGreedy::new(epsilon)), step_size, discount, amt_episodes, use_memory)
+//    });
+//    write_statistics("SARSA_softmax", &mut|| {
+//        rl::model_free_learning(&env, &mut SARSAActionSelector::new(SoftMaxExploration::new(temperature)), step_size, discount, amt_episodes, use_memory)
+//    });
+//    write_statistics("double_q_epsilon", &mut|| {
+//        rl::double_q_learning(&env, &mut QLearningActionSelector::new(EpsilonGreedy::new(epsilon)), step_size, discount, amt_episodes)
+//    });
+//    write_statistics("double_q_softmax", &mut|| {
+//        rl::double_q_learning(&env, &mut QLearningActionSelector::new(SoftMaxExploration::new(temperature)), step_size, discount, amt_episodes)
+//    });
 }
 
 fn write_statistics(name: &str, closure: &mut Fn() -> (DetPolicy, Vec<String>, Vec<String>)) {
