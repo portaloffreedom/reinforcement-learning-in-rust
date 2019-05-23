@@ -45,8 +45,8 @@ pub enum Movement {
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct Pos {
-    x: usize,
-    y: usize,
+    pub x: usize,
+    pub y: usize,
 }
 
 
@@ -202,12 +202,17 @@ impl Env {
         for (new_pos, p) in options {
             tot_p += p;
             if tot_p > r {
-                let target_cell = &self.map[new_pos.x][new_pos.y];
+                let target_cell = &self.cell(new_pos);
                 return (*new_pos, target_cell);
             }
         }
         panic!("Illegal state: Invalid transition map for {:?} {:?}", pos, movement);
 
+    }
+
+    pub fn cell(&self, pos: &Pos) -> &Cell
+    {
+        &self.map[pos.x][pos.y]
     }
 
     pub fn policy_iteration(&self, discount: f32, max_delta: f32) -> (Box<DetPolicy>, f32) {

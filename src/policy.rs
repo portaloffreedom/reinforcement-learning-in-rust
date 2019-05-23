@@ -142,6 +142,36 @@ impl DetPolicy{
             self.policy.insert(pos, Movement::Up);
         }
     }
+
+    pub fn print(&self, env: &Env) {
+        use crate::environment::Cell;
+        let size = env.size();
+        println!();
+        print!("+");
+        for y in 0..size.y { print!("--") }
+        println!("-+");
+        for x in 0..size.x {
+            print!("|");
+            for y in 0..size.y {
+                let pos = Pos {x,y};
+                let cell = env.cell(&pos);
+                let text = match cell {
+                    Cell::Final(r) => if *r > 0 { 'x' } else { ' ' },
+                    Cell::Ice(_) => match self.policy.get(&pos).unwrap() {
+                        Movement::Up => '↑',
+                        Movement::Down => '↓',
+                        Movement::Left => '←',
+                        Movement::Right => '→',
+                    },
+                };
+                print!(" {}", text);
+            }
+            println!(" |");
+        }
+        print!("+");
+        for y in 0..size.y { print!("--") }
+        println!("-+");
+    }
 }
 
 impl Policy for DetPolicy{

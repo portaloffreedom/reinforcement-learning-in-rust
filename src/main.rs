@@ -39,5 +39,6 @@ fn main() {
 //    let policy = rl::model_free_learning(&env, &mut SARSAActionSelector::new(EpsilonGreedy::new(epsilon)), step_size, discount, max_delta);
 //    let policy = rl::model_free_learning(&env, &mut SARSAActionSelector::new(SoftMaxExploration::new(temperature)), step_size, discount, max_delta);
     let policy = rl::double_q_learning(&env, &mut QLearningActionSelector::new(EpsilonGreedy::new(epsilon)), step_size, discount, max_delta);
+    policy.print(&env);
     policy.solve(&env, &mut agent);
 }
