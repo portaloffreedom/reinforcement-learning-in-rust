@@ -61,7 +61,9 @@ impl ExplorationStrategy for SoftMaxExploration {
         let p: f32 = self.rng.gen();
         let mut p_sum = 0.0;
         let mut i = 0;
-        while p > p_sum {
+//        println!("{}, {}", p_sum, p);
+        // Why the fuck is it possible for rng() to generate 0.0?
+        while p >= p_sum && i < 4{
             i += 1;
             p_sum += probs[i-1];
         }

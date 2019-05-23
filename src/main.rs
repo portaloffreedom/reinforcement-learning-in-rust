@@ -44,9 +44,9 @@ fn main() {
 //    let policy = rl::double_q_learning(&env, &mut QLearningActionSelector::new(EpsilonGreedy::new(epsilon)), step_size, discount, amt_episodes);
 //    policy.solve(&env, &mut agent);
 
-    write_statistics("q_learning_epsilon", &mut|| {
-        rl::model_free_learning(&env, &mut QLearningActionSelector::new(EpsilonGreedy::new(epsilon)), step_size, discount, amt_episodes)
-    });
+//    write_statistics("q_learning_epsilon", &mut|| {
+//        rl::model_free_learning(&env, &mut QLearningActionSelector::new(EpsilonGreedy::new(epsilon)), step_size, discount, amt_episodes)
+//    });
     write_statistics("q_learning_softmax", &mut|| {
         rl::model_free_learning(&env, &mut QLearningActionSelector::new(SoftMaxExploration::new(temperature)), step_size, discount, amt_episodes)
     });
@@ -65,9 +65,11 @@ fn main() {
 }
 
 fn write_statistics(name: &str, closure: &mut Fn() -> (DetPolicy, Vec<String>, Vec<String>)) {
+    println!("Gathering tests for {}", name);
     let mut wrt_r = Writer::from_path(name.to_owned() + "_rewards.csv").expect("Failed to open file");
     let mut wrt_s = Writer::from_path(name.to_owned() + "_evals.csv").expect("Failed to open file");
     for i in 0..100 {
+        println!("Evaluation {}", i);
         let (policy, results_r, results_e) = closure();
         wrt_r.write_record(&results_r).expect("Failed to write records");
         wrt_s.write_record(&results_e).expect("Failed to write records");
