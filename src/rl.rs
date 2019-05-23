@@ -129,6 +129,7 @@ impl<T: ExplorationStrategy> ActionSelector for SARSAActionSelector<T> {
     }
 }
 
+
 pub fn model_free_learning (env: &Env, action_selector: &mut ActionSelector, step_size: f32, discount: f32, max_delta: f32)
     -> Box<DetPolicy>
 {
@@ -174,6 +175,73 @@ pub fn model_free_learning (env: &Env, action_selector: &mut ActionSelector, ste
     }
 
     policy_from_hashmap(state_value, env)
+}
+
+pub fn double_q_learning (env: &Env, action_selector: &mut ActionSelector, step_size: f32, discount: f32, max_delta: f32)
+                            -> Box<DetPolicy>
+{
+    let mut state_value_a: HashMap<(Pos, Movement), f32> = HashMap::new();
+    let mut state_value_b: HashMap<(Pos, Movement), f32> = HashMap::new();
+    let mut avg_state_value : HashMap<(Pos, Movement), f32> = HashMap::new();
+    let mut rng = thread_rng();
+    let actions = Movement::actions();
+    // Initialize Q-map
+    for pos in env.iter_all_coordinates() {
+        for action in actions.iter() {
+            state_value_a.insert((pos, *action), 0.0);
+            state_value_b.insert((pos, *action), 0.0);
+            avg_state_value.insert((pos, *action), 0.0);
+        }
+    }
+    let mut delta = max_delta + 1.0;
+    // Iterate until convergence
+    let mut episode_num: usize = 0;
+    while delta > max_delta {
+        episode_num +=1;
+        println!("Episode {}", episode_num);
+
+        let mut agent = Agent::new(env);
+        delta = 0.0;
+
+
+        // Run a full episode, ie until the agent reaches a terminal state
+        while !env.is_terminal(agent.pos) {
+            let s = agent.pos;
+            // Use average state value over both estimates during action selection
+            let a = action_selector.take_action(s, &avg_state_value);
+            let r = agent.r#move(env, a) as f32;
+
+            // Choose between Q^A and Q^B for the argmax in the next state and backup computation
+            let mut state_value;
+            let mut backup_q;
+            if rng.gen::<f32>() > 0.5 {
+                state_value = &mut state_value_a;
+                backup_q = &mut state_value_b;
+            }
+            else {
+                state_value = &mut state_value_b;
+                backup_q = &mut state_value_a;
+            }
+            let s_p = agent.pos;
+            let a_p = action_selector.predict_action(s_p, &state_value);
+
+            println!("SARSA: ({:?}, {:?}, {:?}, {:?}, {:?})", s, a, r, s_p, a_p);
+
+            // Temporal difference using other Q value for backup
+            let t_d = r + discount * backup_q[&(s_p, a_p)] - state_value[&(s, a)];
+            if t_d.abs() > delta {
+                delta = t_d.abs()
+            }
+            state_value.insert((s, a),
+                               // learning step
+                               state_value[&(s, a)] + step_size * t_d
+            );
+
+            avg_state_value.insert((s, a), (state_value_a[&(s, a)] + state_value_b[&(s, a)]) / 2.0);
+        }
+    }
+
+    policy_from_hashmap(avg_state_value, env)
 }
 
 

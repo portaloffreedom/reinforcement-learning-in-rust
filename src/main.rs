@@ -28,9 +28,16 @@ fn main() {
 
 //    env.linear_programming(0.9);
 
-//    let policy = rl::model_free_learning(&env, &mut QLearningActionSelector::new(EpsilonGreedy::new(0.05)), 0.01, 0.99, 0.0001);
-//    let policy = rl::model_free_learning(&env, &mut QLearningActionSelector::new(SoftMaxExploration::new(20.0)), 0.01, 0.99, 0.0001);
-//    let policy = rl::model_free_learning(&env, &mut SARSAActionSelector::new(EpsilonGreedy::new(0.05)), 0.01, 0.99, 0.0001);
-    let policy = rl::model_free_learning(&env, &mut SARSAActionSelector::new(SoftMaxExploration::new(20.0)), 0.01, 0.99, 0.0001);
+    let epsilon = 0.05;
+    let discount = 0.99;
+    let max_delta = 0.0001;
+    let temperature = 20.0;
+    let step_size = 0.01;
+
+//    let policy = rl::model_free_learning(&env, &mut QLearningActionSelector::new(EpsilonGreedy::new(epsilon)), step_size, discount, max_delta);
+//    let policy = rl::model_free_learning(&env, &mut QLearningActionSelector::new(SoftMaxExploration::new(temperature)), step_size, discount, max_delta);
+//    let policy = rl::model_free_learning(&env, &mut SARSAActionSelector::new(EpsilonGreedy::new(epsilon)), step_size, discount, max_delta);
+//    let policy = rl::model_free_learning(&env, &mut SARSAActionSelector::new(SoftMaxExploration::new(temperature)), step_size, discount, max_delta);
+    let policy = rl::double_q_learning(&env, &mut QLearningActionSelector::new(EpsilonGreedy::new(epsilon)), step_size, discount, max_delta);
     policy.solve(&env, &mut agent);
 }
