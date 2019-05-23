@@ -43,6 +43,7 @@ fn main() {
 //    let policy = rl::model_free_learning(&env, &mut SARSAActionSelector::new(SoftMaxExploration::new(temperature)), step_size, discount, amt_episodes);
 //    let policy = rl::double_q_learning(&env, &mut QLearningActionSelector::new(EpsilonGreedy::new(epsilon)), step_size, discount, amt_episodes);
 //    policy.solve(&env, &mut agent);
+//    policy.print(&env);
 
 //    write_statistics("q_learning_epsilon", &mut|| {
 //        rl::model_free_learning(&env, &mut QLearningActionSelector::new(EpsilonGreedy::new(epsilon)), step_size, discount, amt_episodes)
