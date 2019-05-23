@@ -2,6 +2,7 @@ use rand::prelude::*;
 use std::collections::hash_map::HashMap;
 use crate::environment::{Movement, Pos, Env};
 use crate::agent::Agent;
+use crate::policy::{Policy, DetPolicy};
 
 struct RandomExplorationStrategy {}
 struct EpsilonGreedyExplorationStrategy {}
@@ -34,7 +35,7 @@ impl ExplorationStrategy for EpsilonGreedy {
     }
 }
 
-struct SoftMaxExploration {
+pub struct SoftMaxExploration {
     temperature: f32,
     rng: ThreadRng,
 }
@@ -66,6 +67,14 @@ impl ExplorationStrategy for SoftMaxExploration {
     }
 }
 
+struct NoExplorationStrategy {}
+
+impl ExplorationStrategy for NoExplorationStrategy {
+    fn next_state(&mut self, state: Pos, state_value: &HashMap<(Pos, Movement), f32>) -> Movement {
+        max_value_next_action(state, state_value)
+    }
+}
+
 fn max_value_next_action(state: Pos, state_value: &HashMap<(Pos, Movement), f32>) -> Movement {
     Movement::actions().into_iter().fold(Movement::Up,|a, f| -> Movement {
         if state_value[&(state, f)] > state_value[&(state, a)] { f }
@@ -75,7 +84,7 @@ fn max_value_next_action(state: Pos, state_value: &HashMap<(Pos, Movement), f32>
 pub struct QLearningActionSelector<T: ExplorationStrategy> {
     exploration_strategy: T
 }
-struct SARSAActionSelector<T: ExplorationStrategy> {
+pub struct SARSAActionSelector<T: ExplorationStrategy> {
     exploration_strategy: T
 }
 
@@ -120,7 +129,9 @@ impl<T: ExplorationStrategy> ActionSelector for SARSAActionSelector<T> {
     }
 }
 
-pub fn model_free_learning (env: &Env, action_selector: &mut ActionSelector, step_size: f32, discount: f32, max_delta: f32) {
+pub fn model_free_learning (env: &Env, action_selector: &mut ActionSelector, step_size: f32, discount: f32, max_delta: f32)
+    -> Box<DetPolicy>
+{
     let mut state_value: HashMap<(Pos, Movement), f32> = HashMap::new();
     let actions = Movement::actions();
     // Initialize Q-map
@@ -131,11 +142,14 @@ pub fn model_free_learning (env: &Env, action_selector: &mut ActionSelector, ste
     }
     let mut delta = max_delta + 1.0;
     // Iterate until convergence
+    let mut episode_num: usize = 0;
     while delta > max_delta {
+        episode_num +=1;
+        println!("Episode {}", episode_num);
+
         let mut agent = Agent::new(env);
         delta = 0.0;
 
-        println!("New episode");
 
         // Run a full episode, ie until the agent reaches a terminal state
         while !env.is_terminal(agent.pos) {
@@ -145,7 +159,7 @@ pub fn model_free_learning (env: &Env, action_selector: &mut ActionSelector, ste
             let s_p = agent.pos;
             let a_p = action_selector.predict_action(s_p, &state_value);
 
-            println!("SARSA: ({:?}, {:?}, {:?}, {:?}, {:?})", s, a, r, s_p, a_p);
+//            println!("SARSA: ({:?}, {:?}, {:?}, {:?}, {:?})", s, a, r, s_p, a_p);
 
             // Temporal difference
             let t_d = r + discount * state_value[&(s_p, a_p)] - state_value[&(s, a)];
@@ -158,5 +172,22 @@ pub fn model_free_learning (env: &Env, action_selector: &mut ActionSelector, ste
             );
         }
     }
+
+    policy_from_hashmap(state_value, env)
 }
 
+
+fn policy_from_hashmap(state_value_map: HashMap<(Pos, Movement), f32>, env: &Env) -> Box<DetPolicy> {
+    let mut policy = DetPolicy::new();
+    for state in  env.iter_all_coordinates() {
+        let movement = Movement::actions()
+            .into_iter()
+            .fold(Movement::Up,|a, f| -> Movement {
+                if state_value_map[&(state, f)] > state_value_map[&(state, a)] { f }
+                else { a }
+            });
+        policy.policy.insert(state, movement);
+    }
+
+    policy
+}
