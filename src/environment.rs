@@ -235,7 +235,7 @@ impl Env {
         let mut delta = max_delta + 1.0;
         let mut count_i = 1;
         while delta > max_delta { //if the max of all changes is very small, stop
-            println!("Iteration {}", count_i);
+//            println!("Iteration {}", count_i);
             delta = 0.0;
             for pos in self.iter_all_coordinates() {
                 // Only update non-final states
@@ -250,7 +250,7 @@ impl Env {
                         };
                         delta = delta.max((new_value - V[[pos.x, pos.y]]).abs());
                         V[[pos.x, pos.y]] = new_value;
-                        println!("Value ({}, {}): {}", pos.x, pos.y, new_value);
+//                        println!("Value ({}, {}): {}", pos.x, pos.y, new_value);
                     }
                 }
             }

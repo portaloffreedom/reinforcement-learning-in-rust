@@ -3,6 +3,8 @@ use std::collections::hash_map::HashMap;
 use crate::environment::{Movement, Pos, Env};
 use crate::agent::Agent;
 use crate::policy::{Policy, DetPolicy};
+use std::fs::File;
+use csv::Writer;
 
 struct RandomExplorationStrategy {}
 struct EpsilonGreedyExplorationStrategy {}
@@ -130,9 +132,8 @@ impl<T: ExplorationStrategy> ActionSelector for SARSAActionSelector<T> {
 }
 
 
-pub fn model_free_learning (env: &Env, action_selector: &mut ActionSelector, step_size: f32, discount: f32, max_delta: f32)
-    -> Box<DetPolicy>
-{
+pub fn model_free_learning (env: &Env, action_selector: &mut ActionSelector, step_size: f32, discount: f32, amt_episodes: i32)
+                            -> (DetPolicy, Vec<String>, Vec<String>) {
     let mut state_value: HashMap<(Pos, Movement), f32> = HashMap::new();
     let actions = Movement::actions();
     // Initialize Q-map
@@ -141,15 +142,22 @@ pub fn model_free_learning (env: &Env, action_selector: &mut ActionSelector, ste
             state_value.insert((pos, *action), 0.0);
         }
     }
-    let mut delta = max_delta + 1.0;
+
+    let mut cum_reward = 0.0;
+
+    let mut results_r = Vec::new();
+    let mut results_e = Vec::new();
     // Iterate until convergence
-    let mut episode_num: usize = 0;
-    while delta > max_delta {
-        episode_num +=1;
-        println!("Episode {}", episode_num);
+    for episode_num in 0..amt_episodes {
+        if episode_num % 500 == 0 {
+            results_r.push(cum_reward.to_string());
+            results_e.push(env.evaluate_policy(
+                    &policy_from_hashmap(&state_value, &env), discount, 0.001).to_string());
+        }
+
+//        println!("Episode {}", episode_num);
 
         let mut agent = Agent::new(env);
-        delta = 0.0;
 
 
         // Run a full episode, ie until the agent reaches a terminal state
@@ -157,6 +165,7 @@ pub fn model_free_learning (env: &Env, action_selector: &mut ActionSelector, ste
             let s = agent.pos;
             let a = action_selector.take_action(s, &state_value);
             let r = agent.r#move(env, a) as f32;
+            cum_reward += r;
             let s_p = agent.pos;
             let a_p = action_selector.predict_action(s_p, &state_value);
 
@@ -164,26 +173,27 @@ pub fn model_free_learning (env: &Env, action_selector: &mut ActionSelector, ste
 
             // Temporal difference
             let t_d = r + discount * state_value[&(s_p, a_p)] - state_value[&(s, a)];
-            if t_d.abs() > delta {
-                delta = t_d.abs()
-            }
             state_value.insert((s, a),
-               // learning step
-               state_value[&(s, a)] + step_size * t_d
+                               // learning step
+                               state_value[&(s, a)] + step_size * t_d
             );
         }
     }
 
-    policy_from_hashmap(state_value, env)
+    (policy_from_hashmap(&state_value, env), results_r, results_e)
 }
 
-pub fn double_q_learning (env: &Env, action_selector: &mut ActionSelector, step_size: f32, discount: f32, max_delta: f32)
-                            -> Box<DetPolicy>
-{
+pub fn double_q_learning (env: &Env, action_selector: &mut ActionSelector, step_size: f32, discount: f32, amt_episodes: i32)
+                            -> (DetPolicy, Vec<String>, Vec<String>) {
     let mut state_value_a: HashMap<(Pos, Movement), f32> = HashMap::new();
     let mut state_value_b: HashMap<(Pos, Movement), f32> = HashMap::new();
     let mut avg_state_value : HashMap<(Pos, Movement), f32> = HashMap::new();
     let mut rng = thread_rng();
+
+    let mut cum_reward = 0.0;
+    let mut results_r = Vec::new();
+    let mut results_e = Vec::new();
+
     let actions = Movement::actions();
     // Initialize Q-map
     for pos in env.iter_all_coordinates() {
@@ -193,16 +203,16 @@ pub fn double_q_learning (env: &Env, action_selector: &mut ActionSelector, step_
             avg_state_value.insert((pos, *action), 0.0);
         }
     }
-    let mut delta = max_delta + 1.0;
     // Iterate until convergence
-    let mut episode_num: usize = 0;
-    while delta > max_delta {
-        episode_num +=1;
-        println!("Episode {}", episode_num);
+    for episode_num in 0..amt_episodes {
+        if episode_num % 500 == 0 {
+            results_r.push(cum_reward.to_string());
+            results_e.push(env.evaluate_policy(
+                    &policy_from_hashmap(&avg_state_value, &env), discount, 0.01).to_string());
+        }
+//        println!("Episode {}", episode_num);
 
         let mut agent = Agent::new(env);
-        delta = 0.0;
-
 
         // Run a full episode, ie until the agent reaches a terminal state
         while !env.is_terminal(agent.pos) {
@@ -210,6 +220,7 @@ pub fn double_q_learning (env: &Env, action_selector: &mut ActionSelector, step_
             // Use average state value over both estimates during action selection
             let a = action_selector.take_action(s, &avg_state_value);
             let r = agent.r#move(env, a) as f32;
+            cum_reward += r;
 
             // Choose between Q^A and Q^B for the argmax in the next state and backup computation
             let mut state_value;
@@ -225,27 +236,23 @@ pub fn double_q_learning (env: &Env, action_selector: &mut ActionSelector, step_
             let s_p = agent.pos;
             let a_p = action_selector.predict_action(s_p, &state_value);
 
-            println!("SARSA: ({:?}, {:?}, {:?}, {:?}, {:?})", s, a, r, s_p, a_p);
+//            println!("SARSA: ({:?}, {:?}, {:?}, {:?}, {:?})", s, a, r, s_p, a_p);
 
             // Temporal difference using other Q value for backup
             let t_d = r + discount * backup_q[&(s_p, a_p)] - state_value[&(s, a)];
-            if t_d.abs() > delta {
-                delta = t_d.abs()
-            }
             state_value.insert((s, a),
                                // learning step
-                               state_value[&(s, a)] + step_size * t_d
-            );
+                               state_value[&(s, a)] + step_size * t_d);
 
             avg_state_value.insert((s, a), (state_value_a[&(s, a)] + state_value_b[&(s, a)]) / 2.0);
         }
     }
 
-    policy_from_hashmap(avg_state_value, env)
+    (policy_from_hashmap(&avg_state_value, env), results_r, results_e)
 }
 
 
-fn policy_from_hashmap(state_value_map: HashMap<(Pos, Movement), f32>, env: &Env) -> Box<DetPolicy> {
+fn policy_from_hashmap(state_value_map: &HashMap<(Pos, Movement), f32>, env: &Env) -> DetPolicy {
     let mut policy = DetPolicy::new();
     for state in  env.iter_all_coordinates() {
         let movement = Movement::actions()
@@ -257,5 +264,5 @@ fn policy_from_hashmap(state_value_map: HashMap<(Pos, Movement), f32>, env: &Env
         policy.policy.insert(state, movement);
     }
 
-    policy
+    *policy
 }
