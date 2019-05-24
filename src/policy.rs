@@ -146,7 +146,6 @@ impl DetPolicy{
     pub fn print(&self, env: &Env) {
         use crate::environment::Cell;
         let size = env.size();
-        println!();
         print!("+");
         for y in 0..size.y { print!("--") }
         println!("-+");

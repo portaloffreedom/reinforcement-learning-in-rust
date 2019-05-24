@@ -36,10 +36,12 @@ fn main() {
     let amt_episodes = 200000;
     let temperature = 20.0;
     let step_size = 0.01;
-    let mode = Some(rl::Mode::ExperienceReplay(rl::Memory::new(20, 5)));
+//    let mode = rl::Mode::TD0;
+//    let mode = rl::Mode::ExperienceReplay(rl::Memory::new(20, 5));
+    let mode = rl::Mode::EligibilityTraces(rl::EligibilityTraces::new(&env, 0.5));
 
-//    let policy = rl::model_free_learning(&env, &mut QLearningActionSelector::new(EpsilonGreedy::new(epsilon)), step_size, discount, amt_episodes, mode).0;
-    let policy = rl::model_free_learning(&env, &mut QLearningActionSelector::new(SoftMaxExploration::new(temperature)), step_size, discount, amt_episodes, mode).0;
+    let policy = rl::model_free_learning(&env, &mut QLearningActionSelector::new(EpsilonGreedy::new(epsilon)), step_size, discount, amt_episodes, mode).0;
+//    let policy = rl::model_free_learning(&env, &mut QLearningActionSelector::new(SoftMaxExploration::new(temperature)), step_size, discount, amt_episodes, mode).0;
 //    let policy = rl::model_free_learning(&env, &mut SARSAActionSelector::new(EpsilonGreedy::new(epsilon)), step_size, discount, amt_episodes, mode).0;
 //    let policy = rl::model_free_learning(&env, &mut SARSAActionSelector::new(SoftMaxExploration::new(temperature)), step_size, discount, amt_episodes, mode).0;
 //    let policy = rl::double_q_learning(&env, &mut QLearningActionSelector::new(EpsilonGreedy::new(epsilon)), step_size, discount, amt_episodes).0;
