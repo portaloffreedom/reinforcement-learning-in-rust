@@ -1,6 +1,6 @@
 use rand::prelude::*;
 use std::collections::hash_map::HashMap;
-use crate::environment::{Movement, Pos, Env};
+use crate::environment::{Movement, Pos, Env, EnvIter};
 use crate::agent::Agent;
 use crate::policy::{Policy, DetPolicy};
 use std::fs::File;
@@ -134,7 +134,7 @@ impl<T: ExplorationStrategy> ActionSelector for SARSAActionSelector<T> {
     }
 }
 
-struct StepSample {
+pub struct StepSample {
     k: i32,
     l: usize,
     t: i32,
@@ -156,7 +156,7 @@ impl StepSample {
     }
 }
 
-struct Memory {
+pub struct Memory {
     pub trajectory_length: usize,
     pub l: usize,
     pub k: i32,
@@ -211,7 +211,86 @@ impl Memory {
     }
 }
 
-pub fn model_free_learning (env: &Env, action_selector: &mut ActionSelector, step_size: f32, discount: f32, amt_episodes: i32, use_memory: Option<(usize, usize)>)
+pub struct EligibilityTraces {
+    size: Pos,
+    trace_length: f32,
+    pub map: Vec<Vec<HashMap<Movement, f32>>>,
+}
+
+impl EligibilityTraces {
+    pub fn new(env: &Env, trace_length: f32, discount: f32) -> Self {
+        let size = env.size();
+        let mut map = Vec::with_capacity(size.x);
+        for x in 0..size.x {
+            let mut row = Vec::with_capacity(size.y);
+            for y in 0..size.y {
+                let traces = Movement::actions().iter()
+                    .cloned()
+                    .map(|action| (action, 0.0))
+                    .collect();
+
+                row.push(traces);
+            }
+            map.push(row);
+        }
+
+        Self {
+            size,
+            trace_length,
+            map,
+        }
+    }
+
+    pub fn decay_step(&mut self, discount: f32) {
+        let trace_length = self.trace_length;
+        self.map.iter_mut()
+            .flat_map(|row| row.iter_mut())
+            .flat_map( |trace_memory| trace_memory.iter_mut())
+            .for_each(|(action, trace)| {
+                *trace *= discount * trace_length;
+            });
+    }
+
+    pub fn for_each_trace(&self, lambda_function: impl Fn(usize, usize, Movement, f32)) {
+        self.map.iter()
+            // adds x coordinate
+            .enumerate()
+            // flattens the inner loop
+            .flat_map(|(x, row)| row.iter()
+                // adds y coordinate
+                .enumerate()
+                // embeds x coordinate in next level
+                .map(move |(y, trace_actions)| (x, y, trace_actions))
+            )
+            // flattens the inner loop
+            .flat_map( |(x, y, trace_actions)| trace_actions.iter()
+                // embeds x and y coordinates in next level
+                .map(move |(a, trace)| (x, y, a, trace))
+            )
+            // collect all the data organized above and actually execute stuff
+            .for_each(|(x, y, action, trace)| {
+                lambda_function(x,y,*action,*trace);
+            });
+    }
+
+    pub fn visit_state(&mut self, state: Pos, action: Movement) {
+        let trace = self.map[state.x][state.y]
+            .get_mut(&action)
+            .expect("Could not visit state, it does not exist");
+        *trace += 1.0;
+    }
+}
+
+pub enum Mode {
+    // Classic QLearning/Sarsa - Default
+    TD0,
+    // Experience Replay
+    ExperienceReplay(Memory),
+    // EligibilityTraces
+    EligibilityTraces(EligibilityTraces),
+}
+
+pub fn model_free_learning (env: &Env, action_selector: &mut ActionSelector, step_size: f32, discount: f32, amt_episodes: i32, mode: Option<Mode>)
                             -> (DetPolicy, Vec<String>, Vec<String>)
 {
     let mut rng = rand::thread_rng();
@@ -223,31 +302,23 @@ pub fn model_free_learning (env: &Env, action_selector: &mut ActionSelector, ste
             state_value.insert((pos, *action), 0.0);
         }
     }
-    // Initialize memory
-    let mut memory: Option<Memory> = use_memory.map(|(memory_size, trajectory_length)| Memory::new(memory_size, trajectory_length));
+    // Initialize mode
+    let mut mode = mode.unwrap_or(Mode::TD0);
+//    let mut memory: Option<Memory> = use_memory.map(|(memory_size, trajectory_length)| Memory::new(memory_size, trajectory_length));
+//    let mut eligibility_traces = EligibilityTraces::new(&env, 5.0, discount);
 
     let mut cum_reward = 0.0;
-    let mut delta = 1000000.0;
-//    let mut max_delta = 0.0001;
 
     let mut results_r = Vec::new();
     let mut results_e = Vec::new();
 
     // Iterate until convergence
-//    let mut episode_num = 0;
 //    while max_delta < delta {
 
     for episode_num in 0..amt_episodes {
-        if episode_num % 500 == 0 {
-//            println!("Episode {}", episode_num);
-            results_r.push(cum_reward.to_string());
-            results_e.push(env.evaluate_policy(
-                    &policy_from_hashmap(&state_value, &env), discount, 0.001).to_string());
-        }
 
         let mut agent = Agent::new(env);
-        delta = 0.0;
-
+        let mut delta = 0.0;
 
         // Run a full episode, ie until the agent reaches a terminal state
         while !env.is_terminal(agent.pos) {
@@ -257,24 +328,80 @@ pub fn model_free_learning (env: &Env, action_selector: &mut ActionSelector, ste
             cum_reward += r;
             let s_p = agent.pos;
 
-//            println!("SARSA: ({:?}, {:?}, {:?}, {:?}, {:?})", s, a, r, s_p, a_p);
+            //println!("SARSA: ({:?}, {:?}, {:?}, {:?}, {:?})", s, a, r, s_p, a_p);
 
-            if let Some(_memory) = &mut memory {
-//                if _memory.insert(s, a, r, s_p) || env.is_terminal(s_p) {
-//                  for i in 0..(_memory.memory_size*_memory.l*_memory.trajectory_length) {
-                _memory.insert(s, a, r, s_p);
 
-                let sample = _memory.random_sample( & mut rng);
-                let future_action = action_selector.predict_action(sample.position_end, & state_value);
-                delta = update_state_value_map( & mut state_value, discount, delta, step_size,
-                sample.position_start,
-                sample.action, sample.reward,
-                sample.position_end,
-                future_action);
-            } else {
-                let a_p = action_selector.predict_action(s_p, &state_value);
-                delta = update_state_value_map(&mut state_value, discount, delta, step_size,s, a, r, s_p, a_p);
+
+            let t_d = match &mut mode {
+                Mode::TD0 => {
+                    let a_p = action_selector.predict_action(s_p, &state_value);
+                    let t_d = td(&state_value, discount, s, a, r, s_p, a_p);
+                    update_state_value_map(&mut state_value, t_d, step_size, s, a);
+                    t_d
+                },
+                Mode::ExperienceReplay(memory) => {
+                    memory.insert(s, a, r, s_p);
+                    //if _memory.insert(s, a, r, s_p) || env.is_terminal(s_p) {
+                    //  for i in 0..(_memory.memory_size*_memory.l*_memory.trajectory_length) {
+
+                    let sample = memory.random_sample( & mut rng);
+                    let future_action = action_selector.predict_action(sample.position_end, & state_value);
+                    let t_d = td(&state_value,
+                                 discount,
+                                 sample.position_start,
+                                 sample.action,
+                                 sample.reward,
+                                 sample.position_end,
+                                 future_action);
+                    update_state_value_map( &mut state_value,
+                                            t_d,
+                                            step_size,
+                                            sample.position_start,
+                                            sample.action);
+                    t_d
+                },
+                Mode::EligibilityTraces(traces) => {
+                    let a_p = action_selector.predict_action(s_p, &state_value);
+                    traces.visit_state(s, a);
+
+                    // Temporal difference
+                    let t_d = td(&state_value, discount, s, a, r, s_p, a_p);
+
+                    //TODO finish this, does not compile
+//                    traces.for_each_trace(|x, y, action, trace| {
+//                        update_state_value_map(&mut state_value,
+//                                               t_d,
+//                                               step_size * trace,
+//                                               Pos { x, y },
+//                                               action,
+//                        );
+//                    });
+
+                    env.iter_all_coordinates().for_each(|pos| {
+                        state_value.insert((pos, a),
+                                           // learning step
+                                           state_value[&(s, a)] + step_size * t_d
+                        );
+                    });
+
+                    traces.decay_step(discount);
+
+                    t_d
+                }
+            };
+
+            // Update max delta for this episode
+            if t_d.abs() > delta {
+                delta = t_d.abs()
             }
+        }
+
+        // Save Data for analysis
+        if episode_num % 500 == 0 {
+            //println!("Episode {}", episode_num);
+            results_r.push(cum_reward.to_string());
+            results_e.push(env.evaluate_policy(
+                &policy_from_hashmap(&state_value, &env), discount, 0.001).to_string());
         }
     }
 
@@ -349,23 +476,24 @@ pub fn double_q_learning (env: &Env, action_selector: &mut ActionSelector, step_
     (policy_from_hashmap(&avg_state_value, env), results_r, results_e)
 }
 
-fn update_state_value_map(state_value: &mut HashMap<(Pos, Movement), f32>, discount: f32, delta: f32, step_size: f32, s: Pos, a: Movement, r: f32, s_p: Pos, a_p: Movement)
-                          -> f32
+/// Calculate temporal difference
+fn td(state_value: &HashMap<(Pos, Movement), f32>, discount: f32, s: Pos, a: Movement, r: f32, s_p: Pos, a_p: Movement)
+      -> f32
 {
-    let mut delta = delta;
-    // Temporal difference
-    let t_d = r + discount * state_value[&(s_p, a_p)] - state_value[&(s, a)];
-    if t_d.abs() > delta {
-        delta = t_d.abs()
-    }
-    state_value.insert((s, a),
-                       // learning step
-                       state_value[&(s, a)] + step_size * t_d
-    );
-
-    delta
+    r + discount * state_value[&(s_p, a_p)] - state_value[&(s, a)]
 }
 
+/// Update state_value map with step_size
+fn update_state_value_map(state_value: &mut HashMap<(Pos, Movement), f32>, t_d: f32, step_size: f32, s: Pos, a: Movement)
+{
+    let key = (s, a);
+    state_value.insert(key,
+                       // learning step
+                       state_value[&key] + step_size * t_d
+    );
+}
+
+/// Creates deterministic policy from state/value map
 fn policy_from_hashmap(state_value_map: &HashMap<(Pos, Movement), f32>, env: &Env) -> DetPolicy {
     let mut policy = DetPolicy::new();
     for state in  env.iter_all_coordinates() {

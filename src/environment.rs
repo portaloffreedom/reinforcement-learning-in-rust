@@ -385,7 +385,7 @@ pub struct EnvIter {
     size: Pos,
 }
 impl EnvIter{
-    fn new(size: Pos) -> EnvIter{
+    pub fn new(size: Pos) -> EnvIter{
         EnvIter{
             size,
             currx:0,
@@ -394,6 +394,7 @@ impl EnvIter{
         }
     }
 }
+
 impl Iterator for EnvIter {
     type Item = Pos;
 
